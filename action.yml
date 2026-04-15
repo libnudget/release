@@ -21,11 +21,18 @@ inputs:
     description: Prefix for git tags
     required: false
     default: ""
+  release_mode:
+    description: 'Release mode: pr (create PR) or direct (commit and tag immediately)'
+    required: false
+    default: pr
 
 outputs:
   released:
     description: Whether a release was created
     value: ${{ steps.result.outputs.released }}
+  versions:
+    description: JSON object of released versions
+    value: ${{ steps.result.outputs.versions }}
 
 runs:
   using: composite
@@ -44,6 +51,7 @@ runs:
         PACKAGES: ${{ inputs.packages }}
         USER_BUMP: ${{ inputs.version_bump }}
         TAG_PREFIX: ${{ inputs.tag_prefix }}
+        RELEASE_MODE: ${{ inputs.release_mode }}
       run: |
         # Use release_token if set, otherwise use token
         if [ -z "$RELEASE_TOKEN" ]; then
@@ -122,33 +130,60 @@ runs:
         
         if [ "$should_release" = "true" ]; then
           echo "released=true" >> $GITHUB_OUTPUT
-          echo "Versions: $versions_json"
+          echo "versions=$versions_json" >> $GITHUB_OUTPUT
           
           # Configure git
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           
-          # Create branch and commit
-          git checkout -b "$branch_name"
-          git add -A
-          git commit -m "[lib] $commit_msg"
-          
-          echo "Pushing branch: $branch_name"
-          git push -u origin "$branch_name" --force
-          
-          # Create PR
-          pr_title="[lib] release"
-          echo "Creating PR: $pr_title"
-          echo "Branch: $branch_name"
-          
-          # First check push worked
-          echo "Checking remote refs..."
-          git ls-remote origin refs/heads/"$branch_name"
-          
-          # Set GH_TOKEN for gh CLI and create PR
-          export GH_TOKEN="$RELEASE_TOKEN"
-          gh pr create --repo $GITHUB_REPOSITORY --base main --head "$branch_name" --title "$pr_title" --body "Automated release PR. Versions: $versions_json" 2>&1 || echo "PR creation failed"
+          if [ "$RELEASE_MODE" = "direct" ]; then
+            # Direct mode: commit to main and create tags
+            echo "Direct mode: committing to main"
+            git add -A
+            git commit -m "[lib] $commit_msg"
+            git push origin main
+            
+            # Create tags for each package
+            echo "Creating tags..."
+            while read -r pkg; do
+              pkg_name=$(echo "$pkg" | jq -r '.name')
+              new_version=$(echo "$versions_json" | jq -r ".\"$pkg_name\"")
+              if [ "$new_version" != "null" ]; then
+                full_tag="${TAG_PREFIX}${pkg_name}-${new_version}"
+                git tag -d "$full_tag" 2>/dev/null || true
+                git tag "$full_tag"
+                echo "  Created tag: $full_tag"
+              fi
+            done <<< "$(echo "$PACKAGES" | jq -c '.[]')"
+            
+            # Push all tags
+            git push origin --tags
+            echo "Tags pushed"
+          else
+            # PR mode: create branch and PR
+            # Create branch and commit
+            git checkout -b "$branch_name"
+            git add -A
+            git commit -m "[lib] $commit_msg"
+            
+            echo "Pushing branch: $branch_name"
+            git push -u origin "$branch_name" --force
+            
+            # Create PR
+            pr_title="[lib] release"
+            echo "Creating PR: $pr_title"
+            echo "Branch: $branch_name"
+            
+            # First check push worked
+            echo "Checking remote refs..."
+            git ls-remote origin refs/heads/"$branch_name"
+            
+            # Set GH_TOKEN for gh CLI and create PR
+            export GH_TOKEN="$RELEASE_TOKEN"
+            gh pr create --repo $GITHUB_REPOSITORY --base main --head "$branch_name" --title "$pr_title" --body "Automated release PR. Versions: $versions_json" 2>&1 || echo "PR creation failed"
+          fi
         else
           echo "released=false" >> $GITHUB_OUTPUT
+          echo "versions={}" >> $GITHUB_OUTPUT
           echo "No commits since last release, skipping"
         fi
