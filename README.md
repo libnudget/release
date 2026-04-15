@@ -25,7 +25,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: libnudget/release@v1
+      - uses: libnudget/release@v1.0.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           packages: '[{"path": "lib/pkg1", "name": "pkg1"}, {"path": "lib/pkg2", "name": "pkg2"}]'
@@ -63,7 +63,7 @@ jobs:
 Creates a PR with version bumps. Tag creation happens when PR is merged (via webhook or manual trigger).
 
 ```yaml
-- uses: libnudget/release@v1
+- uses: libnudget/release@v1.0.0
   with:
     token: ${{ secrets.GITHUB_TOKEN }}
     release_mode: pr
@@ -74,7 +74,7 @@ Creates a PR with version bumps. Tag creation happens when PR is merged (via web
 Commits version bumps to main and creates git tags immediately.
 
 ```yaml
-- uses: libnudget/release@v1
+- uses: libnudget/release@v1.0.0
   with:
     token: ${{ secrets.GITHUB_TOKEN }}
     release_mode: direct
@@ -85,7 +85,7 @@ Commits version bumps to main and creates git tags immediately.
 Creates git tags and GitHub releases from merged PR versions. Use after PR merge to create tags and releases.
 
 ```yaml
-- uses: libnudget/release@v1
+- uses: libnudget/release@v1.0.0
   with:
     token: ${{ secrets.GITHUB_TOKEN }}
     release_mode: merge
@@ -138,7 +138,7 @@ jobs:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-      - uses: libnudget/release@v1
+      - uses: libnudget/release@v1.0.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           packages: '[{"path": "lib/harper-core", "name": "harper-core"}, {"path": "lib/harper-ui", "name": "harper-ui"}]'
@@ -149,7 +149,7 @@ jobs:
     if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     steps:
-      - uses: libnudget/release@v1
+      - uses: libnudget/release@v1.0.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           packages: '[{"path": "lib/harper-core", "name": "harper-core"}, {"path": "lib/harper-ui", "name": "harper-ui"}]'
