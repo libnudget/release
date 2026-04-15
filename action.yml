@@ -75,7 +75,7 @@ runs:
           done <<< "$(echo "$PACKAGES" | jq -c '.[]')"
           
           echo "released=true" >> $GITHUB_OUTPUT
-          echo "versions=$versions_json" >> $GITHUB_OUTPUT
+          printf "versions=%s" "$versions_json" >> $GITHUB_OUTPUT
           
           # Configure git
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
@@ -186,7 +186,7 @@ runs:
         
         if [ "$should_release" = "true" ]; then
           echo "released=true" >> $GITHUB_OUTPUT
-          echo "versions=$versions_json" >> $GITHUB_OUTPUT
+          printf "versions=%s" "$versions_json" >> $GITHUB_OUTPUT
           
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
