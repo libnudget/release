@@ -91,7 +91,28 @@ Creates git tags and GitHub releases from merged PR versions. Use after PR merge
     release_mode: merge
 ```
 
-## Example
+## Trigger Commands
+
+Each mode can be triggered via GitHub CLI or workflow_dispatch:
+
+### PR Mode (create release PR)
+```bash
+gh workflow run release.yml -f version_bump=patch -f release_mode=pr
+gh workflow run release.yml -f version_bump=minor -f release_mode=pr
+gh workflow run release.yml -f version_bump=major -f release_mode=pr
+```
+
+### Direct Mode (commit + tag immediately)
+```bash
+gh workflow run release.yml -f release_mode=direct
+```
+
+### Merge Mode (create tags + releases after PR merge)
+```bash
+gh workflow run release.yml -f release_mode=merge
+```
+
+## Full Example
 
 ```yaml
 name: Release
@@ -100,14 +121,21 @@ on:
   push:
     branches: [main]
     paths: ['lib/**']
+  pull_request:
+    types: [closed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       version_bump:
         type: choice
         options: [patch, minor, major]
+      release_mode:
+        type: choice
+        options: [pr, direct, merge]
 
 jobs:
-  release:
+  release-pr:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: libnudget/release@v1
@@ -115,6 +143,17 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           packages: '[{"path": "lib/harper-core", "name": "harper-core"}, {"path": "lib/harper-ui", "name": "harper-ui"}]'
           version_bump: ${{ github.event.inputs.version_bump || 'patch' }}
+          release_mode: ${{ github.event.inputs.release_mode || 'pr' }}
+
+  create-tags:
+    if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: libnudget/release@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          packages: '[{"path": "lib/harper-core", "name": "harper-core"}, {"path": "lib/harper-ui", "name": "harper-ui"}]'
+          release_mode: merge
 ```
 
 ## Version Bump Logic
