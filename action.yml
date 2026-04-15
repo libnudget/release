@@ -69,7 +69,7 @@ runs:
             pkg_path=$(echo "$pkg" | jq -r '.path')
             new_version=$(grep -m1 "^version = " "$pkg_path/Cargo.toml" | sed 's/version = "\(.*\)"/\1/')
             if [ -n "$new_version" ]; then
-              versions_json=$(echo "$versions_json" | jq ". + {\"$pkg_name\": \"$new_version\"}")
+              versions_json=$(echo "$versions_json" | jq -c ". + {\"$pkg_name\": \"$new_version\"}")
               echo "  $pkg_name: $new_version"
             fi
           done <<< "$(echo "$PACKAGES" | jq -c '.[]')"
@@ -175,7 +175,7 @@ runs:
             should_release="true"
             branch_name="${branch_name}-${pkg_name}-${new_version}"
             commit_msg="${commit_msg} ${pkg_name} ${new_version}"
-            versions_json=$(echo "$versions_json" | jq ". + {\"$pkg_name\": \"$new_version\"}")
+            versions_json=$(echo "$versions_json" | jq -c ". + {\"$pkg_name\": \"$new_version\"}")
           else
             echo "  Skipping - no commits"
           fi
