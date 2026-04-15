@@ -2,19 +2,20 @@
 
 Automated release workflow for multi-package repositories.
 
-**Tracking**: https://github.com/harpertoken/harper/pulls
-
 ## Overview
 
-This action analyzes commits since the last release, automatically determines the version bump type (major/minor/patch), and creates a release PR with updated versions.
+This action analyzes commits since the last release tag, automatically determines the version bump type (major/minor/patch), and either:
+- **PR mode**: Creates a release PR for review/merge
+- **Direct mode**: Commits and creates git tags immediately
 
 ## Features
 
 - Analyzes commits since last release tag
 - Auto-detects bump type from commit messages (`[feat]`, `[fix]`, breaking changes)
 - Supports manual version bump override
-- Creates release PR with version updates
+- Two release modes: PR or direct commit+tag
 - Skips release if no new commits since last release
+- Creates git tags with configurable prefix
 
 ## Usage
 
@@ -37,9 +38,15 @@ jobs:
 | release_token | Separate token for PR creation | No | token |
 | packages | JSON array of packages to release | Yes | - |
 | version_bump | Manual version bump override | No | `patch` |
-| paths | Paths that trigger release | No | `lib/**` |
 | tag_prefix | Prefix for git tags | No | `` |
-| pr_title_pattern | PR title pattern | No | `[lib] release {name} {version}` |
+| release_mode | `pr` or `direct` | No | `pr` |
+
+## Outputs
+
+| Output | Description |
+|--------|------------|
+| released | Whether a release was created (`true`/`false`) |
+| versions | JSON object with package versions |
 
 ## Package Format
 
@@ -48,6 +55,28 @@ jobs:
   {"path": "lib/pkg1", "name": "pkg1"},
   {"path": "lib/pkg2", "name": "pkg2"}
 ]
+```
+
+## Mode: PR
+
+Creates a PR with version bumps. Tag creation happens when PR is merged (via webhook or manual trigger).
+
+```yaml
+- uses: libnudget/release@v1
+  with:
+    token: ${{ secrets.GITHUB_TOKEN }}
+    release_mode: pr
+```
+
+## Mode: Direct
+
+Commits version bumps to main and creates git tags immediately.
+
+```yaml
+- uses: libnudget/release@v1
+  with:
+    token: ${{ secrets.GITHUB_TOKEN }}
+    release_mode: direct
 ```
 
 ## Example
