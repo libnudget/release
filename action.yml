@@ -22,7 +22,7 @@ inputs:
     required: false
     default: ""
   release_mode:
-    description: 'Release mode: pr (create PR) or direct (commit and tag immediately)'
+    description: 'Release mode: pr (create PR), direct (commit+tag), merge (tag+release after PR merge)'
     required: false
     default: pr
 
@@ -53,47 +53,105 @@ runs:
         TAG_PREFIX: ${{ inputs.tag_prefix }}
         RELEASE_MODE: ${{ inputs.release_mode }}
       run: |
-        # Use release_token if set, otherwise use token
         if [ -z "$RELEASE_TOKEN" ]; then
           RELEASE_TOKEN="$GH_TOKEN"
         fi
         
-        echo "Release token: $RELEASE_TOKEN"
+        echo "Release mode: $RELEASE_MODE"
         
-        # Initialize tracking variables
+        # Handle merge mode separately - just read versions and create tags/releases
+        if [ "$RELEASE_MODE" = "merge" ]; then
+          echo "Merge mode: reading versions from merged files"
+          
+          versions_json="{}"
+          while read -r pkg; do
+            pkg_name=$(echo "$pkg" | jq -r '.name')
+            pkg_path=$(echo "$pkg" | jq -r '.path')
+            new_version=$(grep -m1 "^version = " "$pkg_path/Cargo.toml" | sed 's/version = "\(.*\)"/\1/')
+            if [ -n "$new_version" ]; then
+              versions_json=$(echo "$versions_json" | jq ". + {\"$pkg_name\": \"$new_version\"}")
+              echo "  $pkg_name: $new_version"
+            fi
+          done <<< "$(echo "$PACKAGES" | jq -c '.[]')"
+          
+          echo "released=true" >> $GITHUB_OUTPUT
+          echo "versions=$versions_json" >> $GITHUB_OUTPUT
+          
+          # Configure git
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          # Create tags
+          while read -r pkg; do
+            pkg_name=$(echo "$pkg" | jq -r '.name')
+            new_version=$(echo "$versions_json" | jq -r ".\"$pkg_name\"")
+            if [ "$new_version" != "null" ]; then
+              full_tag="${TAG_PREFIX}${pkg_name}-${new_version}"
+              git tag -d "$full_tag" 2>/dev/null || true
+              git tag "$full_tag"
+              echo "  Tag: $full_tag"
+            fi
+          done <<< "$(echo "$PACKAGES" | jq -c '.[]')"
+          
+          git push origin --tags
+          echo "Tags pushed"
+          
+          # Create GitHub releases
+          export GH_TOKEN="$RELEASE_TOKEN"
+          while read -r pkg; do
+            pkg_name=$(echo "$pkg" | jq -r '.name')
+            pkg_path=$(echo "$pkg" | jq -r '.path')
+            new_version=$(echo "$versions_json" | jq -r ".\"$pkg_name\"")
+            if [ "$new_version" != "null" ]; then
+              full_tag="${TAG_PREFIX}${pkg_name}-${new_version}"
+              LAST_TAG=$(git describe --tags --abbrev=0 --match "${TAG_PREFIX}${pkg_name}-*" 2>/dev/null | tail -1 || echo "")
+              if [ -n "$LAST_TAG" ]; then
+                last_ver=$(echo "$LAST_TAG" | sed "s/${TAG_PREFIX}${pkg_name}-//")
+                CHANGES=$(git log --oneline "${pkg_name}-${last_ver}..HEAD" -- "$pkg_path" 2>/dev/null | head -15 || echo "Release $new_version")
+              else
+                CHANGES=$(git log --oneline -15 -- "$pkg_path" || echo "Release $new_version")
+              fi
+              
+              gh release create "$full_tag" \
+                --title "$pkg_name $new_version" \
+                --notes "$CHANGES" \
+                --target "$GITHUB_SHA" 2>&1 || echo "  Release $full_tag exists"
+              echo "  Release: $full_tag"
+            fi
+          done <<< "$(echo "$PACKAGES" | jq -c '.[]')"
+          
+          echo "Done"
+          exit 0
+        fi
+        
+        # Normal mode: analyze commits
         should_release="false"
         branch_name="release"
         commit_msg="release"
         versions_json="{}"
         
-        # Process each package
         while read -r pkg; do
           pkg_path=$(echo "$pkg" | jq -r '.path')
           pkg_name=$(echo "$pkg" | jq -r '.name')
           
-          # Get current version
           version=$(grep -m1 "^version = " "$pkg_path/Cargo.toml" | sed 's/version = "\(.*\)"/\1/')
           echo "Processing $pkg_name (current: $version)"
           
-          # Find last tag
           last_tag=$(git describe --tags --abbrev=0 --match "${TAG_PREFIX}${pkg_name}-*" 2>/dev/null || echo "none")
           [ -z "$last_tag" ] && last_tag="none"
           
-          # Get commits since last release
           if [ "$last_tag" != "none" ]; then
             commits=$(git log "$last_tag..HEAD" --oneline -- "$pkg_path" 2>/dev/null || true)
           else
             commits=$(git log --oneline -- "$pkg_path" | head -30 || true)
           fi
           
-          # Analyze commits
           has_feat=$(echo "$commits" | grep -cE "\[feat\]|feat:" || true)
           has_break=$(echo "$commits" | grep -cE "!:|BREAKING" || true)
           commit_count=$(echo "$commits" | grep -c . || true)
           
-          echo "  Commits since $last_tag: $commit_count (feat: $has_feat, break: $has_break)"
+          echo "  Commits since $last_tag: $commit_count"
           
-          # Determine bump type
           if [ "$has_break" -gt 0 ]; then
             bump="major"
           elif [ "$has_feat" -gt 0 ] || [ "$USER_BUMP" = "minor" ]; then
@@ -102,7 +160,6 @@ runs:
             bump="$USER_BUMP"
           fi
           
-          # Calculate new version
           IFS='.' read -r major minor patch <<< "$version"
           case "$bump" in
             major) major=$((major + 1)); minor=0; patch=0 ;;
@@ -111,17 +168,16 @@ runs:
           esac
           new_version="$major.$minor.$patch"
           
-          # Update version if there are commits
           if [ "$commit_count" -gt 0 ]; then
             sed -i '0,/^version = "/{s/^version = "[^"]*"/version = "'"$new_version"'"/}' "$pkg_path/Cargo.toml"
-            echo "  Updated $pkg_name to $new_version"
+            echo "  Updated to $new_version"
             
             should_release="true"
             branch_name="${branch_name}-${pkg_name}-${new_version}"
             commit_msg="${commit_msg} ${pkg_name} ${new_version}"
             versions_json=$(echo "$versions_json" | jq ". + {\"$pkg_name\": \"$new_version\"}")
           else
-            echo "  Skipping $pkg_name - no commits since $last_tag"
+            echo "  Skipping - no commits"
           fi
         done <<< "$(echo "$PACKAGES" | jq -c '.[]')"
         
@@ -132,19 +188,15 @@ runs:
           echo "released=true" >> $GITHUB_OUTPUT
           echo "versions=$versions_json" >> $GITHUB_OUTPUT
           
-          # Configure git
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           
           if [ "$RELEASE_MODE" = "direct" ]; then
-            # Direct mode: commit to main and create tags
-            echo "Direct mode: committing to main"
+            echo "Direct: committing to main"
             git add -A
             git commit -m "[lib] $commit_msg"
             git push origin main
             
-            # Create tags for each package
-            echo "Creating tags..."
             while read -r pkg; do
               pkg_name=$(echo "$pkg" | jq -r '.name')
               new_version=$(echo "$versions_json" | jq -r ".\"$pkg_name\"")
@@ -152,38 +204,29 @@ runs:
                 full_tag="${TAG_PREFIX}${pkg_name}-${new_version}"
                 git tag -d "$full_tag" 2>/dev/null || true
                 git tag "$full_tag"
-                echo "  Created tag: $full_tag"
+                echo "  Tag: $full_tag"
               fi
             done <<< "$(echo "$PACKAGES" | jq -c '.[]')"
             
-            # Push all tags
             git push origin --tags
             echo "Tags pushed"
+            
           else
-            # PR mode: create branch and PR
-            # Create branch and commit
+            echo "PR mode: creating branch and PR"
             git checkout -b "$branch_name"
             git add -A
             git commit -m "[lib] $commit_msg"
             
-            echo "Pushing branch: $branch_name"
             git push -u origin "$branch_name" --force
             
-            # Create PR
             pr_title="[lib] release"
             echo "Creating PR: $pr_title"
-            echo "Branch: $branch_name"
             
-            # First check push worked
-            echo "Checking remote refs..."
-            git ls-remote origin refs/heads/"$branch_name"
-            
-            # Set GH_TOKEN for gh CLI and create PR
             export GH_TOKEN="$RELEASE_TOKEN"
-            gh pr create --repo $GITHUB_REPOSITORY --base main --head "$branch_name" --title "$pr_title" --body "Automated release PR. Versions: $versions_json" 2>&1 || echo "PR creation failed"
+            gh pr create --repo $GITHUB_REPOSITORY --base main --head "$branch_name" --title "$pr_title" --body "Automated release PR" 2>&1 || echo "PR creation failed"
           fi
         else
           echo "released=false" >> $GITHUB_OUTPUT
           echo "versions={}" >> $GITHUB_OUTPUT
-          echo "No commits since last release, skipping"
+          echo "No commits since last release"
         fi
