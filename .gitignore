@@ -1,0 +1,7 @@
+.env
+.env.local
+target/
+*.log
+.DS_Store
+*.swp
+*.swo
