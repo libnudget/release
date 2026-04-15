@@ -4,16 +4,17 @@ Automated release workflow for multi-package repositories.
 
 ## Overview
 
-This action analyzes commits since the last release tag, automatically determines the version bump type (major/minor/patch), and either:
-- **PR mode**: Creates a release PR for review/merge
-- **Direct mode**: Commits and creates git tags immediately
+This action analyzes commits since the last release tag, automatically determines the version bump type (major/minor/patch), and:
+- **PR mode**: Creates a release PR
+- **Direct mode**: Commits and creates tags immediately
+- **Merge mode**: Creates tags + GitHub releases (after PR merge)
 
 ## Features
 
 - Analyzes commits since last release tag
 - Auto-detects bump type from commit messages (`[feat]`, `[fix]`, breaking changes)
 - Supports manual version bump override
-- Two release modes: PR or direct commit+tag
+- Three release modes: PR, direct, or merge
 - Skips release if no new commits since last release
 - Creates git tags with configurable prefix
 
@@ -39,7 +40,7 @@ jobs:
 | packages | JSON array of packages to release | Yes | - |
 | version_bump | Manual version bump override | No | `patch` |
 | tag_prefix | Prefix for git tags | No | `` |
-| release_mode | `pr` or `direct` | No | `pr` |
+| release_mode | `pr`, `direct`, or `merge` | No | `pr` |
 
 ## Outputs
 
@@ -77,6 +78,17 @@ Commits version bumps to main and creates git tags immediately.
   with:
     token: ${{ secrets.GITHUB_TOKEN }}
     release_mode: direct
+```
+
+## Mode: Merge
+
+Creates git tags and GitHub releases from merged PR versions. Use after PR merge to create tags and releases.
+
+```yaml
+- uses: libnudget/release@v1
+  with:
+    token: ${{ secrets.GITHUB_TOKEN }}
+    release_mode: merge
 ```
 
 ## Example
