@@ -93,8 +93,16 @@ runs:
             fi
           done <<< "$(echo "$PACKAGES" | jq -c '.[]')"
           
-          git push origin --tags
-          echo "Tags pushed"
+          # Push tags individually with force to handle race conditions
+          while read -r pkg; do
+            pkg_name=$(echo "$pkg" | jq -r '.name')
+            new_version=$(echo "$versions_json" | jq -r ".\"$pkg_name\"")
+            if [ "$new_version" != "null" ]; then
+              full_tag="${TAG_PREFIX}${pkg_name}-${new_version}"
+              git push origin "$full_tag" --force 2>/dev/null || git push origin "$full_tag" 2>/dev/null || true
+              echo "  Tag pushed: $full_tag"
+            fi
+          done <<< "$(echo "$PACKAGES" | jq -c '.[]')"
           
           # Create GitHub releases
           export GH_TOKEN="$RELEASE_TOKEN"
