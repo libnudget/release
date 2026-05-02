@@ -137,6 +137,7 @@ runs:
         branch_name="release"
         commit_msg="release"
         versions_json="{}"
+        lock_manifest_path=""
         
         while read -r pkg; do
           pkg_path=$(echo "$pkg" | jq -r '.path')
@@ -184,6 +185,9 @@ runs:
             branch_name="${branch_name}-${pkg_name}-${new_version}"
             commit_msg="${commit_msg} ${pkg_name} ${new_version}"
             versions_json=$(echo "$versions_json" | jq -c ". + {\"$pkg_name\": \"$new_version\"}")
+            if [ -z "$lock_manifest_path" ]; then
+              lock_manifest_path="$pkg_path/Cargo.toml"
+            fi
           else
             echo "  Skipping - no commits"
           fi
@@ -193,6 +197,15 @@ runs:
         echo "Should release: $should_release"
         
         if [ "$should_release" = "true" ]; then
+          if [ -n "$lock_manifest_path" ]; then
+            if ! command -v cargo >/dev/null 2>&1; then
+              echo "Cargo is required to sync Cargo.lock for Rust release PRs"
+              exit 1
+            fi
+            echo "Syncing Cargo.lock using $lock_manifest_path"
+            cargo metadata --manifest-path "$lock_manifest_path" --format-version 1 >/dev/null
+          fi
+          
           echo "released=true" >> $GITHUB_OUTPUT
           printf "versions=%s" "$versions_json" >> $GITHUB_OUTPUT
           

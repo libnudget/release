@@ -17,6 +17,7 @@ This action analyzes commits since the last release tag, automatically determine
 - Three release modes: PR, direct, or merge
 - Skips release if no new commits since last release
 - Creates git tags with configurable prefix
+- Syncs `Cargo.lock` when Rust package versions are bumped
 
 ## Usage
 
@@ -60,7 +61,7 @@ jobs:
 
 ## Mode: PR
 
-Creates a PR with version bumps. Tag creation happens when PR is merged (via webhook or manual trigger).
+Creates a PR with version bumps. When a Rust package is bumped, the action also runs `cargo metadata` against the first changed package manifest so `Cargo.lock` is included in the same PR. Tag creation happens when PR is merged (via webhook or manual trigger).
 
 ```yaml
 - uses: libnudget/release@v1.0.0
@@ -71,7 +72,7 @@ Creates a PR with version bumps. Tag creation happens when PR is merged (via web
 
 ## Mode: Direct
 
-Commits version bumps to main and creates git tags immediately.
+Commits version bumps to main, syncs `Cargo.lock` for Rust packages, and creates git tags immediately.
 
 ```yaml
 - uses: libnudget/release@v1.0.0
